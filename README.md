@@ -75,33 +75,9 @@ jobs:
 
 ---
 
-### `deploy-update-tag.yml`
+## Deployments
 
-Updates the Kustomize image tag in `stellarlive-infra` to trigger a GitOps deployment via ArgoCD.
-
-```yaml
-jobs:
-  deploy:
-    uses: BIGWISE-TEAM/.github/.github/workflows/deploy-update-tag.yml@main
-    with:
-      service-name: slms-sales
-      image-tag: ${{ needs.build.outputs.sha }}
-      environment: production
-    secrets:
-      INFRA_PAT: ${{ secrets.INFRA_PAT }}
-```
-
-| Input | Required | Description |
-|-------|----------|-------------|
-| `service-name` | yes | Matches `apps/<service-name>/` in stellarlive-infra |
-| `image-tag` | yes | Tag to write into the Kustomize overlay |
-| `environment` | yes | `testing` or `production` |
-
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `INFRA_PAT` | yes | PAT with `repo` scope on `stellarlive-infra` |
-
----
+Deployments are handled by **ArgoCD Image Updater**, which watches GHCR directly and updates the Kustomize overlay in `stellarlive-infra` automatically when a new image is pushed. No workflow is needed for this step.
 
 ## Typical `ci.yml` in a service repo
 
@@ -120,17 +96,6 @@ jobs:
       service-name: slms-sales
       project-path: SLMSSales/SLMSSales.csproj
     secrets: inherit
-
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    uses: BIGWISE-TEAM/.github/.github/workflows/deploy-update-tag.yml@main
-    with:
-      service-name: slms-sales
-      image-tag: ${{ github.sha }}
-      environment: production
-    secrets:
-      INFRA_PAT: ${{ secrets.INFRA_PAT }}
 ```
 
 ## Directory Structure
@@ -141,6 +106,5 @@ jobs:
 └── workflows/
     ├── build-dotnet.yml
     ├── build-node.yml
-    ├── build-java.yml
-    └── deploy-update-tag.yml
+    └── build-java.yml
 ```

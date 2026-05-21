@@ -90,7 +90,6 @@ jobs:
           app-id: ${{ secrets.ARGOCD_APP_ID }}
           private-key: ${{ secrets.ARGOCD_APP_PRIVATE_KEY }}
           owner: BIGWISE-TEAM
-          repositories: stellarlive-infra
 
       - name: Deploy to K8s
         if: inputs.deploy && github.event_name == 'push'

@@ -75,9 +75,20 @@ jobs:
 
 ---
 
-## Deployments
+## Deployments (GitOps)
 
-Deployments are handled by **ArgoCD Image Updater**, which watches GHCR directly and updates the Kustomize overlay in `stellarlive-infra` automatically when a new image is pushed. No workflow is needed for this step.
+After a successful build on `push` events, the workflow automatically:
+1. Tags the image with the short commit SHA (e.g., `abc1234`)
+2. Clones `stellarlive-infra` and updates the kustomize overlay's `newTag`
+3. Pushes the change — ArgoCD detects it and syncs (auto-rollout)
+
+**Requirements:**
+- Org secrets `ARGOCD_APP_ID` and `ARGOCD_APP_PRIVATE_KEY` — from the `stellarlive-argocd` GitHub App (installed on `stellarlive-infra` with contents:write)
+- The service must have an overlay at `apps/{service-name}/overlays/{environment}/kustomization.yaml`
+
+**Opt out:** Pass `deploy: false` in the workflow call to skip auto-deploy (e.g., for libraries like liveentity).
+
+**Deploy to production:** Pass `deploy-environment: 'production'` (default is `testing`).
 
 ## Typical `ci.yml` in a service repo
 

@@ -32,8 +32,13 @@ on:
         required: false
         type: string
         default: 'testing'
-      build-args:
-        description: 'Docker build args (multi-line "KEY=value" pairs)'
+      build-args-from-secrets:
+        description: 'Whitespace/newline-separated list of inherited secret names to forward as docker build-args (e.g. "NEXT_PUBLIC_API_URL\nNEXT_PUBLIC_SUPABASE_URL"). Each name is looked up in inherited secrets and emitted as KEY=value.'
+        required: false
+        type: string
+        default: ''
+      build-environment:
+        description: 'GitHub Environment to source build-time secrets from (e.g. testing, production). Required if build-args-from-secrets references env-scoped secrets.'
         required: false
         type: string
         default: ''
@@ -45,6 +50,25 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.build-environment }}
+    env:
+      # Map every potential frontend secret into the job env. Unset secrets resolve to '' and are
+      # filtered out by the Compose step below. This is the only way to bridge inherited secrets
+      # into a step's dynamic context, since `secrets[name]` is not supported by GitHub Actions.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_SUPABASE_NEW_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_NEW_URL }}
+      NEXT_PUBLIC_SUPABASE_NEW_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_NEW_ANON_KEY }}
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      NEXT_PUBLIC_API_BASE: ${{ secrets.NEXT_PUBLIC_API_BASE }}
+      NEXT_PUBLIC_SEND_PAGE_CONTEXT: ${{ secrets.NEXT_PUBLIC_SEND_PAGE_CONTEXT }}
+      NEXT_PUBLIC_GEOLOCALIZATION_API_KEY: ${{ secrets.NEXT_PUBLIC_GEOLOCALIZATION_API_KEY }}
+      NEXT_PUBLIC_AZURE_AD_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_AD_CLIENT_ID }}
+      NEXT_PUBLIC_AZURE_AD_TENANT_ID: ${{ secrets.NEXT_PUBLIC_AZURE_AD_TENANT_ID }}
+      NEXT_PUBLIC_AZURE_AD_CLIENT_SECRET: ${{ secrets.NEXT_PUBLIC_AZURE_AD_CLIENT_SECRET }}
+      NEXT_PUBLIC_PAYMENT_SALT: ${{ secrets.NEXT_PUBLIC_PAYMENT_SALT }}
+      NEXT_PUBLIC_PAYMENT_SHARED_SECRET: ${{ secrets.NEXT_PUBLIC_PAYMENT_SHARED_SECRET }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +93,26 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
+      - name: Compose build-args
+        id: build-args
+        env:
+          NAMES: ${{ inputs.build-args-from-secrets }}
+        run: |
+          {
+            echo 'value<<EOF'
+            for raw in $NAMES; do
+              name="$(echo "$raw" | tr -d '[:space:]')"
+              [ -z "$name" ] && continue
+              value="${!name-}"
+              if [ -z "$value" ]; then
+                echo "::warning::Secret '$name' is empty or not set — skipping build-arg"
+                continue
+              fi
+              echo "${name}=${value}"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -79,7 +123,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: ${{ inputs.build-args }}
+          build-args: ${{ steps.build-args.outputs.value }}
 
       # --- GitOps deploy: update image tag in stellarlive-infra ---
       - name: Generate GitHub App token

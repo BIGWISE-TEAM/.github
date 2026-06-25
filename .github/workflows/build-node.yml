@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: 'testing'
+      build-args:
+        description: 'Docker build args (multi-line "KEY=value" pairs)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -74,6 +79,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: ${{ inputs.build-args }}
 
       # --- GitOps deploy: update image tag in stellarlive-infra ---
       - name: Generate GitHub App token

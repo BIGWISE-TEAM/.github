@@ -130,15 +130,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Merged build-args: git metadata (from this workflow) + dynamic
+          # secret build-args (composed via the "Compose build-args" step).
+          # YAML would silently drop the earlier of two build-args keys — merging into one block prevents that.
           build-args: |
             GIT_SHA=${{ github.sha }}
             GIT_BRANCH=${{ github.ref_name }}
             BUILD_TIME=${{ steps.build-time.outputs.date }}
             GITHUB_USER=${{ github.actor }}
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            ${{ steps.build-args.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: ${{ steps.build-args.outputs.value }}
 
       # --- GitOps deploy: update image tag in stellarlive-infra ---
       - name: Generate GitHub App token

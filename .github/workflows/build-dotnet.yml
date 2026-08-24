@@ -69,6 +69,8 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix=
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
@@ -95,7 +97,7 @@ jobs:
 
       # --- GitOps deploy: update image tag in stellarlive-infra ---
       - name: Generate GitHub App token
-        if: inputs.deploy && github.event_name == 'push'
+        if: inputs.deploy && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
@@ -104,7 +106,7 @@ jobs:
           owner: BIGWISE-TEAM
 
       - name: Deploy to K8s
-        if: inputs.deploy && github.event_name == 'push'
+        if: inputs.deploy && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
         env:
           TAG: ${{ github.sha }}
           SERVICE: ${{ inputs.service-name }}

@@ -69,7 +69,9 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix=
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |

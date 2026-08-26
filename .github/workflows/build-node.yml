@@ -130,28 +130,37 @@ jobs:
             done
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
-
       # Opt-in, and off by default: nothing changes for callers that do not ask.
       #
       # A private-repo ubuntu-latest runner has 7.752GiB of RAM. A Next 16 build
       # of a 506-route app peaks at 9.6GB in one process -- Turbopack holds the
       # whole module graph in native memory until compilation ends -- so the
-      # kernel kills it and buildx reports ResourceExhausted. The runner ships a
-      # 4GB swapfile, but the buildx container does not reliably get it.
+      # kernel kills it and buildx reports ResourceExhausted.
       #
-      # Compiling against swap is slower. That is the trade: a build that takes
-      # longer beats a build that cannot run at all.
+      # THE SWAPFILE GOES ON /mnt, NOT ON /. The first version of this step put a
+      # 12G file on the root filesystem, which has only ~14GB free and is shared
+      # with Docker's layer storage. Every build then failed -- including Next 14
+      # ones that need nowhere near 9.6GB, and one whose compile step was CACHED
+      # and still died at `COPY node_modules` in the final stage. That is the
+      # signature of a full disk, not of memory pressure. /mnt is the runner's
+      # large temp disk (~70GB).
+      #
+      # Existing swap is left alone rather than `swapoff -a`: the runner ships its
+      # own swapfile and there is no reason to take it away.
+      #
+      # df is printed on both sides so a future disk problem is visible in the log
+      # instead of surfacing as an unexplained failure three steps later.
       - name: Expand swap for memory-heavy builds
         if: inputs.expand-swap
         run: |
-          echo 'before:'; free -h
-          sudo swapoff -a || true
-          sudo rm -f /swapfile
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo 'after:'; free -h
+          echo '--- before ---'; free -h; df -h / /mnt
+          sudo swapoff /mnt/ci-swapfile 2>/dev/null || true
+          sudo rm -f /mnt/ci-swapfile
+          sudo fallocate -l 8G /mnt/ci-swapfile
+          sudo chmod 600 /mnt/ci-swapfile
+          sudo mkswap /mnt/ci-swapfile
+          sudo swapon /mnt/ci-swapfile
+          echo '--- after ---'; free -h; df -h / /mnt
 
       - name: Build and push
         uses: docker/build-push-action@v6

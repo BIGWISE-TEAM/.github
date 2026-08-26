@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: ''
+      expand-swap:
+        description: 'Grow the runner swapfile before building. For images whose build peaks above the runner RAM.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -125,6 +130,28 @@ jobs:
             done
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
+
+      # Opt-in, and off by default: nothing changes for callers that do not ask.
+      #
+      # A private-repo ubuntu-latest runner has 7.752GiB of RAM. A Next 16 build
+      # of a 506-route app peaks at 9.6GB in one process -- Turbopack holds the
+      # whole module graph in native memory until compilation ends -- so the
+      # kernel kills it and buildx reports ResourceExhausted. The runner ships a
+      # 4GB swapfile, but the buildx container does not reliably get it.
+      #
+      # Compiling against swap is slower. That is the trade: a build that takes
+      # longer beats a build that cannot run at all.
+      - name: Expand swap for memory-heavy builds
+        if: inputs.expand-swap
+        run: |
+          echo 'before:'; free -h
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo 'after:'; free -h
 
       - name: Build and push
         uses: docker/build-push-action@v6

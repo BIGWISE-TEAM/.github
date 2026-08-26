@@ -130,37 +130,42 @@ jobs:
             done
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
-      # Opt-in, and off by default: nothing changes for callers that do not ask.
+      # Opt-in, off by default: nothing changes for callers that do not ask.
       #
       # A private-repo ubuntu-latest runner has 7.752GiB of RAM. A Next 16 build
       # of a 506-route app peaks at 9.6GB in one process -- Turbopack holds the
-      # whole module graph in native memory until compilation ends -- so the
-      # kernel kills it and buildx reports ResourceExhausted.
+      # whole module graph in native memory until compilation ends -- so without
+      # swap the kernel kills it.
       #
-      # THE SWAPFILE GOES ON /mnt, NOT ON /. The first version of this step put a
-      # 12G file on the root filesystem, which has only ~14GB free and is shared
-      # with Docker's layer storage. Every build then failed -- including Next 14
-      # ones that need nowhere near 9.6GB, and one whose compile step was CACHED
-      # and still died at `COPY node_modules` in the final stage. That is the
-      # signature of a full disk, not of memory pressure. /mnt is the runner's
-      # large temp disk (~70GB).
+      # DISK IS THE OTHER HALF, and it is not optional. Measured on the runner:
       #
-      # Existing swap is left alone rather than `swapoff -a`: the runner ships its
-      # own swapfile and there is no reason to take it away.
+      #   /dev/root  72G  59G used  14G avail  82%  /
+      #   /dev/root  72G  59G used  14G avail  82%  /mnt   <- SAME DEVICE
       #
-      # df is printed on both sides so a future disk problem is visible in the log
-      # instead of surfacing as an unexplained failure three steps later.
-      - name: Expand swap for memory-heavy builds
+      # /mnt is not a separate disk here, so putting the swapfile there does not
+      # help: an 8G file took the root filesystem from 14G to 5.2G free, and
+      # `exporting to image` then failed with 'no space left on device' -- on
+      # builds whose compile step was CACHED and never touched memory at all.
+      #
+      # The 59G already in use is preinstalled toolchains this build never touches.
+      # Reclaiming them buys room for both the swapfile and the image export.
+      #
+      # df is printed at each stage so the disk budget is visible in the log.
+      - name: Reclaim runner disk, then expand swap
         if: inputs.expand-swap
         run: |
-          echo '--- before ---'; free -h; df -h / /mnt
+          echo '--- start ---'; free -h; df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/.ghcup \
+                      /usr/local/share/powershell /usr/share/swift || true
+          echo '--- after reclaim ---'; df -h /
           sudo swapoff /mnt/ci-swapfile 2>/dev/null || true
-          sudo rm -f /mnt/ci-swapfile
+          sudo rm -f /mnt/ci-swapfile /swapfile
           sudo fallocate -l 8G /mnt/ci-swapfile
           sudo chmod 600 /mnt/ci-swapfile
           sudo mkswap /mnt/ci-swapfile
           sudo swapon /mnt/ci-swapfile
-          echo '--- after ---'; free -h; df -h / /mnt
+          echo '--- final ---'; free -h; df -h /
 
       - name: Build and push
         uses: docker/build-push-action@v6

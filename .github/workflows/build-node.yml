@@ -47,6 +47,16 @@ on:
         required: false
         type: boolean
         default: false
+      cache-mount-id:
+        description: 'id of a RUN --mount=type=cache in the Dockerfile to keep between runs (e.g. nextjs-build-cache). Empty = off.'
+        required: false
+        type: string
+        default: ''
+      cache-mount-target:
+        description: 'target path of that cache mount inside the build (e.g. /app/.next/cache). Required with cache-mount-id.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -167,6 +177,34 @@ jobs:
           sudo mkswap /mnt/ci-swapfile
           sudo swapon /mnt/ci-swapfile
           echo '--- final ---'; free -h; df -h /
+
+      # Opt-in, off by default: nothing changes for callers that do not ask.
+      #
+      # A RUN --mount=type=cache lives in the builder, and every run gets a new
+      # runner, so the mount starts empty each time and cache-to type=gha does not
+      # export it. slms-frontend keeps Next's webpack cache there and recompiled
+      # from scratch on every push (`Compiled ... in 6.9min`, 2026-10-26). The
+      # mount is restored from actions/cache and injected into BuildKit; after the
+      # build, the post steps run in reverse order: cache-dance extracts the mount
+      # first, then actions/cache saves it under a new key.
+      #
+      # Keyed per build environment: NEXT_PUBLIC_* values are inlined, so testing
+      # and production builds must not share a compile cache.
+      - name: Restore build cache mount
+        if: inputs.cache-mount-id != ''
+        uses: actions/cache@v4
+        with:
+          path: build-cache-mount
+          key: ${{ inputs.service-name }}-${{ inputs.cache-mount-id }}-${{ inputs.build-environment || 'default' }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ inputs.service-name }}-${{ inputs.cache-mount-id }}-${{ inputs.build-environment || 'default' }}-
+
+      - name: Inject build cache mount into BuildKit
+        if: inputs.cache-mount-id != ''
+        uses: reproducible-containers/buildkit-cache-dance@v3.4.0
+        with:
+          cache-map: |
+            { "build-cache-mount": { "target": "${{ inputs.cache-mount-target }}", "id": "${{ inputs.cache-mount-id }}" } }
 
       - name: Build and push
         uses: docker/build-push-action@v6
